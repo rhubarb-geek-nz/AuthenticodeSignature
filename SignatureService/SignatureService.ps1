@@ -1,4 +1,4 @@
-# Copyright (c) 2023 Roger Brown.
+# Copyright (c) 2024 Roger Brown.
 # Licensed under the MIT License.
 
 param(
@@ -27,7 +27,6 @@ if ( -not $Authorization.Contains($request.Headers.Authorization) )
     Exit
 }
 
-$DSC = [System.IO.Path]::DirectorySeparatorChar
 [string]$guid = New-Guid
 
 $command = $request.Query['command'][0]
@@ -40,7 +39,7 @@ if ( $command -ne 'sign')
     throw ( 'invalid command {0}' -f $command )
 }
 
-$container = ( $WebRootPath + $DSC + $guid )
+$container = Join-Path -Path $WebRootPath -ChildPath $guid
 
 $null = New-Item -Path $container -ItemType Directory
 
@@ -49,7 +48,7 @@ try
     $pipelineInput.Files | ForEach-Object {
         [Microsoft.Extensions.Logging.LoggerExtensions]::LogInformation($Logger,('Sign "{0}" with "{1}"' -f $_.FileName, $sha1),$null)
 
-        $fileName = ( $container + $DSC + (Split-Path -Path $_.FileName -Leaf ) )
+        $fileName = Join-Path -Path $container -ChildPath (Split-Path -Path $_.FileName -Leaf )
 
         $stream = [System.IO.File]::Open($fileName, [System.IO.FileMode]::Create )
 
