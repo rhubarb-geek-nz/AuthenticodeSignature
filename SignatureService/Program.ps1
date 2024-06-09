@@ -22,16 +22,18 @@ foreach ($var in
 	('WebRootPath',$env.WebRootPath,'Web Root Path'),
 	('Logger',$log,'Logger'),
 	('Authorization',[Microsoft.Extensions.Configuration.ConfigurationBinder]::Get($cfg.GetSection('Authorization'),[System.Collections.Generic.List[string]]),'Authorization'),
-	('WWWAuthorization',$cfg['WWW-Authorization'],'WWW-Authorization')
+	('WWWAuthenticate',$cfg['WWW-Authenticate'],'WWW-Authenticate')
 )
 {
 	$iss.Variables.Add((New-Object -TypeName 'System.Management.Automation.Runspaces.SessionStateVariableEntry' -ArgumentList $var))
 }
 
+$delegate = Get-Command -Name './SignatureService.ps1' | Select-Object -ExpandProperty ScriptBlock
+
 [Microsoft.AspNetCore.Builder.EndpointRouteBuilderExtensions]::MapPost(
 	$app,
 	$cfg['Endpoint'],
-	(New-AspNetForPowerShellRequestDelegate -Script ([System.IO.File]::ReadAllText('SignatureService.ps1')) -InitialSessionState $iss)
+	(New-AspNetForPowerShellRequestDelegate -ScriptBlock $delegate -InitialSessionState $iss)
 )
 
 $app.Run()

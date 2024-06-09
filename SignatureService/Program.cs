@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Roger Brown.
+// Copyright (c) 2024 Roger Brown.
 // Licensed under the MIT License.
 
 using System.Management.Automation;
@@ -11,7 +11,7 @@ iss.AddAspNetForPowerShellCmdlets();
 
 using (PowerShell powerShell = PowerShell.Create(iss))
 {
-    powerShell.AddScript(File.ReadAllText("Program.ps1"));
+    powerShell.AddCommand("./Program.ps1");
 
     powerShell.AddArgument(args);
 

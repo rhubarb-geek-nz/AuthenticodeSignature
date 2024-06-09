@@ -28,7 +28,7 @@ if ( -not $Authorization.Contains($request.Headers.Authorization) )
 }
 
 $DSC = [System.IO.Path]::DirectorySeparatorChar
-$guid =  (New-Guid).ToString()
+[string]$guid = New-Guid
 
 $command = $request.Query['command'][0]
 $sha1 = $request.Query['sha1'][0]
@@ -81,7 +81,7 @@ try
 
             $contentDisposition.FileName = $_.FileName
 
-            $response.Headers.ContentDisposition = $contentDisposition.ToString()
+            $response.Headers.ContentDisposition = [string]$contentDisposition
 
             Get-Content -LiteralPath $fileName -AsByteStream -ReadCount 0
         }
