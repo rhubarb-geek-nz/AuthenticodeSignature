@@ -20,7 +20,7 @@ $request = $context.Request
 $response = $context.Response
 $response.StatusCode = 200
 
-if ( -not $Authorization.Contains($request.Headers.Authorization) )
+if ( -not ( $Authorization -ccontains $request.Headers.Authorization) )
 {
     $response.StatusCode = 401;
     $response.Headers.WWWAuthenticate = $WWWAuthenticate
