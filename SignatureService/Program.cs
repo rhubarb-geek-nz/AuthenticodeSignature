@@ -9,9 +9,13 @@ var iss = InitialSessionState.CreateDefault();
 
 iss.AddAspNetForPowerShellCmdlets();
 
+string assemblyLocation = System.Reflection.Assembly.GetExecutingAssembly().Location;
+string assemblyDirectory = Path.GetDirectoryName(assemblyLocation);
+string programPS1 = Path.Combine(assemblyDirectory, "Program.ps1");
+
 using (PowerShell powerShell = PowerShell.Create(iss))
 {
-    powerShell.AddCommand("./Program.ps1");
+    powerShell.AddCommand(programPS1);
 
     powerShell.AddArgument(args);
 
