@@ -2,12 +2,13 @@
 // Licensed under the MIT License.
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
-using System.ComponentModel.Design;
 using System.IO;
 using System.Linq;
 using System.Management.Automation;
 using System.Net;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -15,51 +16,55 @@ using System.Xml;
 
 namespace RhubarbGeekNz.AuthenticodeSignature
 {
-    public abstract class AuthenticodeSignaturePSCmdlet : PSCmdlet
+    public abstract class AuthenticodeSignaturePSCmdlet : PSCmdlet, IDisposable
     {
+        private WebClient webClient;
+        private string endPoint, authorization;
+
         protected byte[] UploadFile(IDictionary<string, string> queryParams, string filePath)
         {
             byte[] response;
-            string local = string.Join(Path.DirectorySeparatorChar.ToString(),
-                new string[] {
+
+            if (webClient == null)
+            {
+                string local = string.Join(Path.DirectorySeparatorChar.ToString(),
+                    new string[] {
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "rhubarb-geek-nz.signtool",
                     "signtool.config"
-                });
+                    });
 
-            XmlDocument xmlDoc = new XmlDocument();
+                XmlDocument xmlDoc = new XmlDocument();
 
-            xmlDoc.Load(local);
+                xmlDoc.Load(local);
 
-            string endPoint = xmlDoc.SelectSingleNode("/SignTool/Endpoint").InnerText;
-            string authorization = xmlDoc.SelectSingleNode("/SignTool/Authorization").InnerText;
+                endPoint = xmlDoc.SelectSingleNode("/SignTool/Endpoint").InnerText;
+                authorization = xmlDoc.SelectSingleNode("/SignTool/Authorization").InnerText;
 
-            using (WebClient web = new WebClient())
-            {
-                web.Headers["Authorization"] = authorization;
+                webClient = new WebClient();
 
-                string url = string.Join(
-                    "?",
-                    new string[] {
-                            endPoint,
-                            string.Join("&",
-                                queryParams.Select(
-                                    (x) => string.Join(
-                                        "=",
-                                        new string[] {
-                                            x.Key,
-                                            WebUtility.UrlEncode(x.Value)
-                                        }
-                                    )
-                                )
-                            )
-                    }
-                );
-
-                response = web.UploadFile(url, filePath);
+                webClient.Headers["Authorization"] = authorization;
             }
 
-            return response;
+            string url = string.Join(
+                "?",
+                new string[] {
+                        endPoint,
+                        string.Join("&",
+                            queryParams.Select(
+                                (x) => string.Join(
+                                    "=",
+                                    new string[] {
+                                        x.Key,
+                                        WebUtility.UrlEncode(x.Value)
+                                    }
+                                )
+                            )
+                        )
+                }
+            );
+
+            return webClient.UploadFile(url, filePath);
         }
 
         private static readonly string BEGIN_CERTIFICATE = "--BEGIN CERTIFICATE--", END_CERTIFICATE = "--END CERTIFICATE--";
@@ -99,6 +104,64 @@ namespace RhubarbGeekNz.AuthenticodeSignature
 
             return certificate;
         }
+
+        private static readonly IDictionary<SignatureStatus, uint> SignatureStatusToWin32Error = new Dictionary<SignatureStatus, uint>()
+        {
+            { SignatureStatus.Valid,0U},
+            { SignatureStatus.Incompatible,0x80090008},
+            { SignatureStatus.UnknownError,0xFFFFFFFF},
+            { SignatureStatus.NotSupportedFileFormat,0x800b0001},
+            { SignatureStatus.NotTrusted,0x800B0111},
+            { SignatureStatus.HashMismatch,0x8009200d},
+            { SignatureStatus.NotSigned,0x800b0100}
+        };
+
+        internal object CreateSignature(string filePath, X509Certificate2 signer, SignatureStatus status, X509Certificate2 timer)
+        {
+            object result = null;
+
+            if (SignatureStatusToWin32Error.TryGetValue(status, out uint error))
+            {
+                Type type = typeof(Signature);
+
+                var method = type.GetMethod("Init", BindingFlags.Instance | BindingFlags.NonPublic, new Type[]
+                    {
+                        typeof(string),
+                        typeof(X509Certificate2),
+                        typeof(uint),
+                        typeof(X509Certificate2)
+                    }
+                );
+
+                if (method != null)
+                {
+                    object signature = RuntimeHelpers.GetUninitializedObject(typeof(Signature));
+
+                    method.Invoke(signature, new object[] { filePath, signer, error, timer });
+
+                    if (signature is Signature sig && sig.Status == status)
+                    {
+                        result = signature;
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        protected override void EndProcessing() => Dispose();
+
+        public void Dispose()
+        {
+            IDisposable disposable = webClient;
+
+            webClient = null;
+
+            if (disposable != null)
+            {
+                disposable.Dispose();
+            }
+        }
     }
 
     [Cmdlet(VerbsCommon.Set, "AuthenticodeSignature")]
@@ -135,14 +198,23 @@ namespace RhubarbGeekNz.AuthenticodeSignature
 
                 File.WriteAllBytes(filePath, response);
 
-                PSObject result = new PSObject();
+                object signature = CreateSignature(filePath, Certificate, SignatureStatus.Valid, null);
 
-                result.Properties.Add(new PSNoteProperty("SignerCertificate", Certificate));
-                result.Properties.Add(new PSNoteProperty("Status", SignatureStatus.Valid));
-                result.Properties.Add(new PSNoteProperty("StatusMessage", "Signature verified."));
-                result.Properties.Add(new PSNoteProperty("Path", filePath));
+                if (signature == null)
+                {
+                    PSObject result = new PSObject();
 
-                WriteObject(result);
+                    result.Properties.Add(new PSNoteProperty("SignerCertificate", Certificate));
+                    result.Properties.Add(new PSNoteProperty("Status", SignatureStatus.Valid));
+                    result.Properties.Add(new PSNoteProperty("StatusMessage", "Signature verified."));
+                    result.Properties.Add(new PSNoteProperty("Path", filePath));
+
+                    WriteObject(result);
+                }
+                else
+                {
+                    WriteObject(signature);
+                }
             }
             catch (Exception ex)
             {
@@ -154,10 +226,75 @@ namespace RhubarbGeekNz.AuthenticodeSignature
     [Cmdlet(VerbsCommon.Get, "AuthenticodeSignature")]
     public sealed class GetAuthenticodeSignature : AuthenticodeSignaturePSCmdlet
     {
-        [Parameter(Mandatory = true)]
-        public string FilePath;
+        [Parameter(ParameterSetName = "path", Mandatory = true, Position = 0)]
+        public string[] FilePath;
+        [Parameter(ParameterSetName = "literal", Mandatory = true)]
+        public string[] LiteralPath;
 
         protected override void ProcessRecord()
+        {
+            if (FilePath != null)
+            {
+                foreach (string filePath in FilePath)
+                {
+                    IEnumerable<string> files = null;
+
+                    try
+                    {
+                        files = GetResolvedProviderPathFromPSPath(filePath, out var info);
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteError(new ErrorRecord(ex, VerbsCommon.Get, ErrorCategory.ObjectNotFound, null));
+                    }
+
+                    if (files != null)
+                    {
+                        foreach (string file in files)
+                        {
+                            if (file != null)
+                            {
+                                if (0 == (FileAttributes.Directory & File.GetAttributes(file)))
+                                {
+                                    ProcessFile(file);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (LiteralPath != null)
+            {
+                foreach (string filePath in LiteralPath)
+                {
+                    string file = null;
+
+                    try
+                    {
+                        file = GetUnresolvedProviderPathFromPSPath(filePath);
+
+                        if (0 != (FileAttributes.Directory & File.GetAttributes(file)))
+                        {
+                            file = null;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        file = null;
+
+                        WriteError(new ErrorRecord(ex, VerbsCommon.Get, ErrorCategory.ObjectNotFound, null));
+                    }
+
+                    if (file != null)
+                    {
+                        ProcessFile(file);
+                    }
+                }
+            }
+        }
+
+        private void ProcessFile(string filePath)
         {
             try
             {
@@ -165,16 +302,12 @@ namespace RhubarbGeekNz.AuthenticodeSignature
 
                 queryParams.Add("command", "verify");
 
-                string filePath = GetUnresolvedProviderPathFromPSPath(FilePath);
-
                 if (filePath == null)
                 {
-                    throw new FileNotFoundException(FilePath);
+                    throw new FileNotFoundException();
                 }
 
                 var response = UploadFile(queryParams, filePath);
-
-                PSObject result = new PSObject();
 
                 using (PowerShell powerShell = PowerShell.Create(RunspaceMode.CurrentRunspace))
                 {
@@ -182,69 +315,156 @@ namespace RhubarbGeekNz.AuthenticodeSignature
 
                     var output = powerShell.Invoke(new string[] { Encoding.UTF8.GetString(response) });
 
-                    foreach (var item in output)
+                    object signature = null;
+
+                    if (output.Count == 1)
                     {
-                        foreach (var prop in item.Properties)
+                        var outputItem = output[0];
+                        X509Certificate2 signer = null, timer = null;
+                        var signerValue = outputItem.Properties["SignerCertificate"];
+                        var timerValue = outputItem.Properties["TimeStamperCertificate"];
+
+                        if (signerValue != null)
                         {
-                            if (prop.Value != null)
+                            signer = GetCertificate(signerValue.Value.ToString());
+                        }
+
+                        if (timerValue != null)
+                        {
+                            timer = GetCertificate(timerValue.Value.ToString());
+                        }
+
+                        SignatureStatus status = SignatureStatus.UnknownError;
+
+                        var statusValue = outputItem.Properties["Status"];
+
+                        if (statusValue != null && Enum.TryParse<SignatureStatus>(statusValue.Value.ToString(), out SignatureStatus parsedStatus))
+                        {
+                            status = parsedStatus;
+                        }
+
+                        signature = CreateSignature(filePath, signer, status, timer);
+
+                        if (signature != null)
+                        {
+                            Type type = signature.GetType();
+
+                            foreach (string name in new string[] { "IsOSBinary", "SignatureType" })
                             {
-                                var info = typeof(Signature).GetProperty(prop.Name);
+                                var propertyValue = outputItem.Properties[name];
 
-                                if (info != null)
+                                if (propertyValue != null)
                                 {
-                                    PSNoteProperty p = null;
+                                    var property = type.GetProperty(name);
 
-                                    if (prop.Value is string str)
+                                    if (property != null)
                                     {
-                                        if (info.PropertyType.IsEnum)
+                                        Type propertyType = property.PropertyType;
+
+                                        if (propertyType.IsEnum)
                                         {
-                                            p = new PSNoteProperty(prop.Name, Enum.Parse(info.PropertyType, str));
+                                            property.SetValue(signature, Enum.Parse(propertyType, propertyValue.Value.ToString()), null);
                                         }
                                         else
                                         {
-                                            if (info.PropertyType == typeof(X509Certificate2))
+                                            if (propertyType.IsAssignableFrom(propertyValue.Value.GetType()))
                                             {
-                                                X509Certificate2 cert = GetCertificate(str);
-
-                                                if (cert == null)
-                                                {
-                                                    p = new PSNoteProperty(prop.Name, str);
-                                                }
-                                                else
-                                                {
-                                                    p = new PSNoteProperty(prop.Name, cert);
-                                                }
-                                            }
-                                            else
-                                            {
-                                                switch (prop.Name)
-                                                {
-                                                    case "Path":
-                                                        p = new PSNoteProperty(prop.Name, filePath);
-                                                        break;
-                                                    default:
-                                                        p = new PSNoteProperty(prop.Name, str);
-                                                        break;
-                                                }
+                                                property.SetValue(signature, propertyValue.Value, null);
                                             }
                                         }
                                     }
-                                    else
-                                    {
-                                        p = new PSNoteProperty(prop.Name, prop.Value);
-                                    }
+                                }
+                            }
 
-                                    if (p != null)
+                            if (status == SignatureStatus.UnknownError)
+                            {
+                                var propertyValue = outputItem.Properties["StatusMessage"];
+
+                                if (propertyValue != null && !propertyValue.Value.Equals(((Signature)signature).StatusMessage))
+                                {
+                                    var field = type.GetField("_statusMessage", BindingFlags.NonPublic | BindingFlags.Instance);
+
+                                    if (field != null)
                                     {
-                                        result.Properties.Add(p);
+                                        field.SetValue(signature, propertyValue.Value);
                                     }
                                 }
                             }
                         }
                     }
-                }
 
-                WriteObject(result);
+                    if (signature == null)
+                    {
+                        PSObject result = new PSObject();
+
+                        foreach (var item in output)
+                        {
+                            foreach (var prop in item.Properties)
+                            {
+                                if (prop.Value != null)
+                                {
+                                    var info = typeof(Signature).GetProperty(prop.Name);
+
+                                    if (info != null)
+                                    {
+                                        PSNoteProperty p = null;
+
+                                        if (prop.Value is string str)
+                                        {
+                                            if (info.PropertyType.IsEnum)
+                                            {
+                                                p = new PSNoteProperty(prop.Name, Enum.Parse(info.PropertyType, str));
+                                            }
+                                            else
+                                            {
+                                                if (info.PropertyType == typeof(X509Certificate2))
+                                                {
+                                                    X509Certificate2 cert = GetCertificate(str);
+
+                                                    if (cert == null)
+                                                    {
+                                                        p = new PSNoteProperty(prop.Name, str);
+                                                    }
+                                                    else
+                                                    {
+                                                        p = new PSNoteProperty(prop.Name, cert);
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    switch (prop.Name)
+                                                    {
+                                                        case "Path":
+                                                            p = new PSNoteProperty(prop.Name, filePath);
+                                                            break;
+                                                        default:
+                                                            p = new PSNoteProperty(prop.Name, str);
+                                                            break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        else
+                                        {
+                                            p = new PSNoteProperty(prop.Name, prop.Value);
+                                        }
+
+                                        if (p != null)
+                                        {
+                                            result.Properties.Add(p);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        WriteObject(result);
+                    }
+                    else
+                    {
+                        WriteObject(signature);
+                    }
+                }
             }
             catch (Exception ex)
             {
