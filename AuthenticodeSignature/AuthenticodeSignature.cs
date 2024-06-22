@@ -23,8 +23,6 @@ namespace RhubarbGeekNz.AuthenticodeSignature
 
         protected byte[] UploadFile(IDictionary<string, string> queryParams, string filePath)
         {
-            byte[] response;
-
             if (webClient == null)
             {
                 string local = string.Join(Path.DirectorySeparatorChar.ToString(),
