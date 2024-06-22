@@ -43,3 +43,5 @@ YFr03haC8XYc/ud0s9Rj2ZCxMAy+HQbXcAT2z+fKlWw=
 $codeSignCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::CreateFromPem($pem)
 
 Set-AuthenticodeSignature -Certificate $codeSignCertificate -TimestampServer 'http://timestamp.digicert.com' -HashAlgorithm SHA256 -FilePath 'test.ps1'
+
+Get-AuthenticodeSignature -FilePath 'test.ps1'

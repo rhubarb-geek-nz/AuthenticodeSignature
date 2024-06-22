@@ -93,6 +93,8 @@ try
                 'verify' {
                     [Microsoft.Extensions.Logging.LoggerExtensions]::LogInformation($Logger,('Verify "{0}"' -f $baseName), $Null)
 
+                    $response.ContentType = [Net.Mime.MediaTypeNames+Application]::Json
+
                     $result = Get-AuthenticodeSignature -FilePath $fileName
 
                     $TimeStamperCertificate = $result.TimeStamperCertificate
@@ -103,7 +105,7 @@ try
                         Path = $baseName
                         SignatureType = $result.SignatureType.ToString()
                         Status = $result.Status.ToString()
-                        StatusMessage = $result.StatusMessage
+                        StatusMessage = $result.StatusMessage.Replace($fileName,$baseName)
                     }
 
                     if ($TimeStamperCertificate)
