@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFrameworks>net6.0;net7.0;net8.0</TargetFrameworks>
+    <TargetFrameworks>net6.0;net8.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
@@ -9,12 +9,6 @@
     <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.4.2" />
     <PackageReference Include="rhubarb-geek-nz.AspNetForPowerShell.PSCmdlet" Version="7.4.2" />
     <PackageReference Include="rhubarb-geek-nz.AspNetForPowerShell.Extensions" Version="7.4.2" />
-  </ItemGroup>
-
-  <ItemGroup Condition=" '$(TargetFramework)' == 'net7.0' ">
-    <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.3.12" />
-    <PackageReference Include="rhubarb-geek-nz.AspNetForPowerShell.PSCmdlet" Version="7.3.12" />
-    <PackageReference Include="rhubarb-geek-nz.AspNetForPowerShell.Extensions" Version="7.3.12" />
   </ItemGroup>
 
   <ItemGroup Condition=" '$(TargetFramework)' == 'net6.0' ">
