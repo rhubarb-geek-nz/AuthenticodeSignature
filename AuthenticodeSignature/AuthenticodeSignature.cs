@@ -65,44 +65,6 @@ namespace RhubarbGeekNz.AuthenticodeSignature
             return webClient.UploadFile(url, filePath);
         }
 
-        private static readonly string BEGIN_CERTIFICATE = "--BEGIN CERTIFICATE--", END_CERTIFICATE = "--END CERTIFICATE--";
-
-        internal X509Certificate2 GetCertificate(string s)
-        {
-            X509Certificate2 certificate = null;
-
-            if (s.Contains(BEGIN_CERTIFICATE) && s.Contains(END_CERTIFICATE))
-            {
-                int i = s.IndexOf(BEGIN_CERTIFICATE);
-
-                if (i > 0)
-                {
-                    int j = s.LastIndexOf(END_CERTIFICATE);
-
-                    if (j > 0)
-                    {
-                        i = s.IndexOf('\n', i);
-
-                        if (i > 0)
-                        {
-                            j = s.LastIndexOf('\n', j);
-
-                            if (j > 0)
-                            {
-                                string base64 = s.Substring(i + 1, j - i - 1);
-
-                                byte[] bytes = Convert.FromBase64String(base64);
-
-                                certificate = new X509Certificate2(bytes);
-                            }
-                        }
-                    }
-                }
-            }
-
-            return certificate;
-        }
-
         private static readonly IDictionary<SignatureStatus, uint> SignatureStatusToWin32Error = new Dictionary<SignatureStatus, uint>()
         {
             { SignatureStatus.Valid,0U},
@@ -324,12 +286,12 @@ namespace RhubarbGeekNz.AuthenticodeSignature
 
                         if (signerValue != null)
                         {
-                            signer = GetCertificate(signerValue.Value.ToString());
+                            signer = X509Certificate2.CreateFromPem(signerValue.Value.ToString());
                         }
 
                         if (timerValue != null)
                         {
-                            timer = GetCertificate(timerValue.Value.ToString());
+                            timer = X509Certificate2.CreateFromPem(timerValue.Value.ToString());
                         }
 
                         SignatureStatus status = SignatureStatus.UnknownError;
@@ -417,7 +379,7 @@ namespace RhubarbGeekNz.AuthenticodeSignature
                                             {
                                                 if (info.PropertyType == typeof(X509Certificate2))
                                                 {
-                                                    X509Certificate2 cert = GetCertificate(str);
+                                                    X509Certificate2 cert = X509Certificate2.CreateFromPem(str);
 
                                                     if (cert == null)
                                                     {
