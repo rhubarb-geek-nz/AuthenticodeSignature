@@ -1,3 +1,4 @@
+#!/usr/bin/env pwsh
 # Copyright (c) 2024 Roger Brown.
 # Licensed under the MIT License.
 
@@ -7,6 +8,13 @@ trap
 {
 	throw $PSItem
 }
+
+$DSC = [System.IO.Path]::DirectorySeparatorChar
+
+$dllPath = [System.String].Assembly.Location.Split($DSC)
+$dllPath[-3] = 'Microsoft.AspNetCore.App'
+$dllPath[-1] = 'Microsoft.AspNetCore.dll'
+[System.String]::Join($DSC, $dllPath) | Import-Module
 
 $app = New-AspNetForPowerShellWebApplication -ArgumentList $args
 
@@ -32,12 +40,13 @@ $service = Join-Path -Path $PSScriptRoot -ChildPath 'SignatureService.ps1'
 
 [Microsoft.Extensions.Logging.LoggerExtensions]::LogInformation($log,('SignatureService {0}' -f $service),$null)
 
-$delegate = Get-Command -Name $service | Select-Object -ExpandProperty ScriptBlock
+$script = Get-Command -Name $service | Select-Object -ExpandProperty ScriptBlock
+$delegate = New-AspNetForPowerShellRequestDelegate -ScriptBlock $script -InitialSessionState $iss
 
-[Microsoft.AspNetCore.Builder.EndpointRouteBuilderExtensions]::MapPost(
+$null = [Microsoft.AspNetCore.Builder.EndpointRouteBuilderExtensions]::MapPost(
 	$app,
 	$cfg['Endpoint'],
-	(New-AspNetForPowerShellRequestDelegate -ScriptBlock $delegate -InitialSessionState $iss)
+	$delegate
 )
 
 $app.Run()
